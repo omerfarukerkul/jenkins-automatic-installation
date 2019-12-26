@@ -114,7 +114,7 @@ function Get-LatestPluginLink {
 }
 
 function Get-LatestWarLink {
-    (Invoke-WebRequest -UseBasicParsing $Global:JENKINS_WAR_URL).Content | % { [regex]::matches($_, "(?:<a href=')(.*)(?:' .*' '>)").Groups[3].Value }
+    (Invoke-WebRequest -UseBasicParsing $Global:JENKINS_WAR_URL).Content | % { [regex]::matches($_, "(?:<a href=')(.*)(?:' .*' '>)").Groups[1].Value }
 }
 
 function Get-LatestWarHash {
@@ -122,16 +122,15 @@ function Get-LatestWarHash {
 }
 
 function ProgressFor-WarFile {
-    Read-JenkinsPluginsFromJson
     Download-JenkinsWar
 }
 
 function ProgressFor-Plugins {
+    Read-JenkinsPluginsFromJson
     $isPluginFolderExist = Check-PluginsFolderExists
     if (!$isPluginFolderExist) {
         New-Item -Type directory -Path $Global:FOLDER_LOCATION_FOR_PLUGINS -Force | Out-Null
     }
-    Read-JenkinsPluginsFromJson
     $pluginCount = Check-PluginsFolder
     if ($pluginCount -gt 0) {
         $Global:EXISTING_PLUGIN_NAMES = Get-ChildItem $Global:FOLDER_LOCATION_FOR_PLUGINS
@@ -144,8 +143,27 @@ function ProgressFor-Plugins {
         }
     }
     if ($pluginCount -eq 0) {
-        $Global:JENKINS_PLUGINS_OBJECT | ForEach-Object { Where-Object { $_.plugins.name } } | ForEach-Object { Get-LatestPluginLink -PluginName $_ } | ForEach-Object { Get-FileFromURL -URL $Global:JENKINS_URL$_ -Filename ($Global:FOLDER_LOCATION_FOR_PLUGINS + $_.Substring($_.LastIndexOf('/')).replace('/', '')) }
+        $Global:JENKINS_PLUGINS_OBJECT | ForEach-Object { $_.plugins.name } | ForEach-Object { Get-LatestPluginLink -PluginName $_ } | ForEach-Object { Get-FileFromURL -URL $Global:JENKINS_URL$_ -Filename ($Global:FOLDER_LOCATION_FOR_PLUGINS + $_.Substring($_.LastIndexOf('/')).replace('/', '')) }
     }
+}
+
+function Setup-Java() {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory, Position = 1)]
+        [string]$filePath
+    )
+    if ((Test-Path -Path "$filePathjre8.exe") -eq "False") {
+        #Java 8 indirilir ve kurulur.
+        [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+        $URL = (Invoke-WebRequest -UseBasicParsing https://www.java.com/en/download/manual.jsp).Content | % { [regex]::matches($_, '(?:<a title="Download Java software for Windows [(]64-bit[)]" href=")(.*)(?:">)').Groups[1].Value }
+        Get-FileFromURL -URL $URL -Filename "$filePath\jre8.exe"
+    }
+    #Invoke-WebRequest -UseBasicParsing -OutFile "$filePath\jre8.exe" $URL
+    Start-Process "$filePath\jre8.exe" '/s REBOOT=0 SPONSORS=0 AUTO_UPDATE=0' -Wait
+    $result = $?
+    Remove-Item -Path "$filePath\jre8.exe" -Force
+    $result
 }
 
 function Check-FileHashes {
@@ -170,6 +188,22 @@ function Check-FileHashes {
     }
 }
 
+function Start-Jenkins {
+    
+    $title = 'Jenkins islemi'
+    $question = 'Jenkins simdi baslatilsin mi?'
+    $choices = '&Evet', '&Hayir'
+
+    $decision = $Host.UI.PromptForChoice($title, $question, $choices, 1)
+    if ($decision -eq 0) {
+
+        $jenkinsApp = Start-Process -FilePath javaw -ArgumentList '-jar', 'jenkins.war' -RedirectStandardOutput '.\console.out' -RedirectStandardError '.\console.err'
+    }
+    else {
+        Write-Host 'Islem iptal edildi.'
+    }
+}
+
 $isFolderExist = Check-JenkinsSetupFolderExists
 
 if (!$isFolderExist) {
@@ -180,22 +214,32 @@ $Global:IS_WAR_EXIST = Check-WarExists
 if (!$Global:IS_WAR_EXIST) {
     ProgressFor-WarFile
 }
-$latestHash = Get-LatestWarHash
-$isConsistent = Check-FileHashes -Hash $latestHash -Filepath ($Global:FOLDER_LOCATION + "jenkins.war")
-if (!$isConsistent) {
-    Write-Host "War File is not the latest version. Latest version is downloading." -ForegroundColor Cyan 
-    ProgressFor-WarFile
+else {
+    $latestHash = Get-LatestWarHash
+    $isConsistent = Check-FileHashes -Hash $latestHash -Filepath ($Global:FOLDER_LOCATION + "jenkins.war")
+    if (!$isConsistent) {
+        Write-Host "War File is not the latest version. Latest version is downloading." -ForegroundColor Cyan 
+        ProgressFor-WarFile
+    }
 }
+
 ProgressFor-Plugins
 Set-Location -Path $Global:FOLDER_LOCATION
-$title = 'Jenkins islemi'
-$question = 'Jenkins simdi baslatilsin mi?'
-$choices = '&Evet', '&Hayir'
 
-$decision = $Host.UI.PromptForChoice($title, $question, $choices, 1)
-if ($decision -eq 0) {
-    $jenkinsApp = Start-Process -FilePath javaw -ArgumentList '-jar', 'jenkins.war' -RedirectStandardOutput '.\console.out' -RedirectStandardError '.\console.err'
+if (((Get-Command java | Select-Object -ExpandProperty Version).tostring() -notmatch "^8.0")) {
+    $title = 'Java Yukle'
+    $question = "PC'nizde java yok veya PC'nizdeki java eski surum. Devam etmek icin java 8 versiyonunu yuklemeniz gerekmektedir. Java 8 Yuklensin mi?"
+    $choices = '&Evet', '&Hayir'
+
+    $decision = $Host.UI.PromptForChoice($title, $question, $choices, 1)
+    if ($decision -eq 0) {
+        $setupJava = Setup-Java $Global:FOLDER_LOCATION
+        Start-Jenkins
+    }
+    else {
+        Write-Host 'Islem iptal edildi.'
+    }
 }
 else {
-    Write-Host 'İslem iptal edildi.'
+    Start-Jenkins
 }

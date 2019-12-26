@@ -122,26 +122,8 @@ function Get-LatestWarHash {
 }
 
 function ProgressFor-WarFile {
-    $isPluginFolderExist = Check-PluginsFolderExists
-    if (!$isPluginFolderExist) {
-        New-Item -Type directory -Path $Global:FOLDER_LOCATION_FOR_PLUGINS -Force | Out-Null
-    }
     Read-JenkinsPluginsFromJson
     Download-JenkinsWar
-    $pluginCount = Check-PluginsFolder
-    if ($pluginCount -gt 0) {
-        $Global:EXISTING_PLUGIN_NAMES = Get-ChildItem $Global:FOLDER_LOCATION_FOR_PLUGINS
-        $filenames = $Global:EXISTING_PLUGIN_NAMES.Name.Replace(".hpi", "")
-        $Global:SUBTRACTED_PLUGINS = $Global:JENKINS_PLUGINS_OBJECT.plugins | ? { $_.name -notin $filenames }
-        if ($null -ne $Global:SUBTRACTED_PLUGINS) {
-            if ($Global:SUBTRACTED_PLUGINS.name.Count -gt 0) {
-                $Global:SUBTRACTED_PLUGINS.name | ForEach-Object { Get-LatestPluginLink -PluginName $_ } | ForEach-Object { Get-FileFromURL -URL $Global:JENKINS_URL$_ -Filename ($Global:FOLDER_LOCATION_FOR_PLUGINS + $_.Substring($_.LastIndexOf('/')).replace('/', '')) }            
-            }    
-        }
-    }
-    if ($pluginCount -eq 0) {
-        $Global:JENKINS_PLUGINS_OBJECT | ForEach-Object { Where-Object { $_.plugins.name } } | ForEach-Object { Get-LatestPluginLink -PluginName $_ } | ForEach-Object { Get-FileFromURL -URL $Global:JENKINS_URL$_ -Filename ($Global:FOLDER_LOCATION_FOR_PLUGINS + $_.Substring($_.LastIndexOf('/')).replace('/', '')) }
-    }
 }
 
 function ProgressFor-Plugins {
@@ -193,31 +175,27 @@ $isFolderExist = Check-JenkinsSetupFolderExists
 if (!$isFolderExist) {
     New-Item -ItemType Directory -Path $Global:FOLDER_LOCATION -Force | Out-Null
 }
+$Global:IS_WAR_EXIST = Check-WarExists
+
+if (!$Global:IS_WAR_EXIST) {
+    ProgressFor-WarFile
+}
+$latestHash = Get-LatestWarHash
+$isConsistent = Check-FileHashes -Hash $latestHash -Filepath ($Global:FOLDER_LOCATION + "jenkins.war")
+if (!$isConsistent) {
+    Write-Host "War File is not the latest version. Latest version is downloading." -ForegroundColor Cyan 
+    ProgressFor-WarFile
+}
+ProgressFor-Plugins
+Set-Location -Path $Global:FOLDER_LOCATION
+$title = 'Jenkins islemi'
+$question = 'Jenkins simdi baslatilsin mi?'
+$choices = '&Evet', '&Hayir'
+
+$decision = $Host.UI.PromptForChoice($title, $question, $choices, 1)
+if ($decision -eq 0) {
+    $jenkinsApp = Start-Process -FilePath javaw -ArgumentList '-jar', 'jenkins.war' -RedirectStandardOutput '.\console.out' -RedirectStandardError '.\console.err'
+}
 else {
-    $Global:IS_WAR_EXIST = Check-WarExists
-
-    if (!$Global:IS_WAR_EXIST) {
-        ProgressFor-WarFile
-    }
-    else {
-        $latestHash = Get-LatestWarHash
-        $isConsistent = Check-FileHashes -Hash $latestHash -Filepath ($Global:FOLDER_LOCATION + "jenkins.war")
-        if (!$isConsistent) {
-            Write-Host "War File is not the latest version. Latest version is downloading." -ForegroundColor Cyan 
-            ProgressFor-WarFile
-        }
-        ProgressFor-Plugins
-        Set-Location -Path $Global:FOLDER_LOCATION
-        $title = 'Jenkins islemi'
-        $question = 'Jenkins simdi baslatilsin mi?'
-        $choices = '&Evet', '&Hayir'
-
-        $decision = $Host.UI.PromptForChoice($title, $question, $choices, 1)
-        if ($decision -eq 0) {
-            $jenkinsApp = Start-Process -FilePath javaw -ArgumentList '-jar', 'jenkins.war' -RedirectStandardOutput '.\console.out' -RedirectStandardError '.\console.err'
-        }
-        else {
-            Write-Host 'İslem iptal edildi.'
-        }
-    }
+    Write-Host 'İslem iptal edildi.'
 }

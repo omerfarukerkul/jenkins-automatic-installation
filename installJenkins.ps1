@@ -8,7 +8,7 @@ $Global:JENKINS_PLUGINS_OBJECT = [System.Object]
 
 $Global:PLUGIN_ITEM_COUNT = 0
 $Global:IS_WAR_EXIST = $false
-
+$Global:EXISTING_PLUGIN_NAMES = [System.Object]
 
 function Get-FileFromURL {
     [CmdletBinding()]
@@ -133,8 +133,18 @@ function ProgressFor-WarFile {
     Read-JenkinsPluginsFromJson
     Download-JenkinsWar
     $pluginCount = Check-PluginsFolder
-    if ($pluginCount -ne 56) {
-        $Global:JENKINS_PLUGINS_OBJECT | ForEach-Object { $_.plugins.name } | ForEach-Object { Get-LatestPluginLink -PluginName $_ } | ForEach-Object { Get-FileFromURL -URL $Global:JENKINS_URL$_ -Filename ($Global:FOLDER_LOCATION_FOR_PLUGINS + $_.Substring($_.LastIndexOf('/')).replace('/', '')) }
+    if ($pluginCount -gt 0) {
+        $Global:EXISTING_PLUGIN_NAMES = Get-ChildItem $Global:FOLDER_LOCATION_FOR_PLUGINS
+        $filenames = $Global:EXISTING_PLUGIN_NAMES.Name.Replace(".hpi", "")
+        $Global:SUBTRACTED_PLUGINS = $Global:JENKINS_PLUGINS_OBJECT.plugins | ? { $_.name -notin $filenames }
+        if ($null -ne $Global:SUBTRACTED_PLUGINS) {
+            if ($Global:SUBTRACTED_PLUGINS.name.Count -gt 0) {
+                $Global:SUBTRACTED_PLUGINS.name | ForEach-Object { Get-LatestPluginLink -PluginName $_ } | ForEach-Object { Get-FileFromURL -URL $Global:JENKINS_URL$_ -Filename ($Global:FOLDER_LOCATION_FOR_PLUGINS + $_.Substring($_.LastIndexOf('/')).replace('/', '')) }            
+            }    
+        }
+    }
+    if ($pluginCount -eq 0) {
+        $Global:JENKINS_PLUGINS_OBJECT | ForEach-Object { Where-Object { $_.plugins.name } } | ForEach-Object { Get-LatestPluginLink -PluginName $_ } | ForEach-Object { Get-FileFromURL -URL $Global:JENKINS_URL$_ -Filename ($Global:FOLDER_LOCATION_FOR_PLUGINS + $_.Substring($_.LastIndexOf('/')).replace('/', '')) }
     }
 }
 
@@ -145,8 +155,18 @@ function ProgressFor-Plugins {
     }
     Read-JenkinsPluginsFromJson
     $pluginCount = Check-PluginsFolder
-    if ($pluginCount -ne 56) {
-        $Global:JENKINS_PLUGINS_OBJECT | ForEach-Object { $_.plugins.name } | ForEach-Object { Get-LatestPluginLink -PluginName $_ } | ForEach-Object { Get-FileFromURL -URL $Global:JENKINS_URL$_ -Filename ($Global:FOLDER_LOCATION_FOR_PLUGINS + $_.Substring($_.LastIndexOf('/')).replace('/', '')) }
+    if ($pluginCount -gt 0) {
+        $Global:EXISTING_PLUGIN_NAMES = Get-ChildItem $Global:FOLDER_LOCATION_FOR_PLUGINS
+        $filenames = $Global:EXISTING_PLUGIN_NAMES.Name.Replace(".hpi", "")
+        $Global:SUBTRACTED_PLUGINS = $Global:JENKINS_PLUGINS_OBJECT.plugins | ? { $_.name -notin $filenames }
+        if ($null -ne $Global:SUBTRACTED_PLUGINS) {
+            if ($Global:SUBTRACTED_PLUGINS.name.Count -gt 0) {
+                $Global:SUBTRACTED_PLUGINS.name | ForEach-Object { Get-LatestPluginLink -PluginName $_ } | ForEach-Object { Get-FileFromURL -URL $Global:JENKINS_URL$_ -Filename ($Global:FOLDER_LOCATION_FOR_PLUGINS + $_.Substring($_.LastIndexOf('/')).replace('/', '')) }            
+            }
+        }
+    }
+    if ($pluginCount -eq 0) {
+        $Global:JENKINS_PLUGINS_OBJECT | ForEach-Object { Where-Object { $_.plugins.name } } | ForEach-Object { Get-LatestPluginLink -PluginName $_ } | ForEach-Object { Get-FileFromURL -URL $Global:JENKINS_URL$_ -Filename ($Global:FOLDER_LOCATION_FOR_PLUGINS + $_.Substring($_.LastIndexOf('/')).replace('/', '')) }
     }
 }
 
@@ -185,13 +205,23 @@ else {
     }
     else {
         $latestHash = Get-LatestWarHash
-        $isConsistent = Check-FileHashes -Hash $latestHash.toString() -Filepath ($Global:FOLDER_LOCATION + "jenkins.war")
+        $isConsistent = Check-FileHashes -Hash $latestHash -Filepath ($Global:FOLDER_LOCATION + "jenkins.war")
         if (!$isConsistent) {
             Write-Host "War File is not the latest version. Latest version is downloading." -ForegroundColor Cyan 
             ProgressFor-WarFile
         }
         ProgressFor-Plugins
         Set-Location -Path $Global:FOLDER_LOCATION
-        $jenkinsApp = Start-Process -FilePath javaw -ArgumentList '-jar', 'jenkins.war' -RedirectStandardOutput '.\console.out' -RedirectStandardError '.\console.err'
+        $title = 'Jenkins islemi'
+        $question = 'Jenkins simdi baslatilsin mi?'
+        $choices = '&Evet', '&Hayir'
+
+        $decision = $Host.UI.PromptForChoice($title, $question, $choices, 1)
+        if ($decision -eq 0) {
+            $jenkinsApp = Start-Process -FilePath javaw -ArgumentList '-jar', 'jenkins.war' -RedirectStandardOutput '.\console.out' -RedirectStandardError '.\console.err'
+        }
+        else {
+            Write-Host 'İslem iptal edildi.'
+        }
     }
 }

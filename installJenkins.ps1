@@ -91,10 +91,6 @@ function Download-JenkinsWar {
     Get-FileFromURL -URL $LatestWarLink -Filename ($Global:FOLDER_LOCATION + "jenkins.war")
 }
 
-function Download-JenkinsPlugins {
-    $Global:JENKINS_PLUGINS_OBJECT | ForEach-Object { }
-}
-
 function Check-PluginsFolderExists {
     Test-Path -Path ($Global:FOLDER_LOCATION_FOR_PLUGINS)
 }

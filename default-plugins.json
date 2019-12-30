@@ -98,7 +98,8 @@
             { "name": "emailext-template" },
             { "name": "mailer", "suggested": true },
             { "name": "publish-over-ssh" },
-            { "name": "ssh" }
+            { "name": "ssh" },
+            { "name": "greenballs" }
         ]
     }
 ]

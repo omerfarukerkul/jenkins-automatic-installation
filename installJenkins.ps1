@@ -5,6 +5,8 @@ $Global:FOLDER_LOCATION = $env:USERPROFILE + "\Desktop\jenkins\"
 $Global:FOLDER_LOCATION_FOR_PLUGINS = $Global:FOLDER_LOCATION + "Plugins\"
 $Global:JENKINS_DEFAULT_PLUGINS_JSON = $MyInvocation.ScriptName.DirectoryName + "default-plugins.json"
 $Global:JENKINS_PLUGINS_OBJECT = [System.Object]
+$Global:JENKINS_HOME = $env:USERPROFILE + "\.jenkins\"
+$Global:JENKINS_ADMIN_SECRET = $Global:JENKINS_HOME + "\secrets\initialAdminPassword"
 
 $Global:PLUGIN_ITEM_COUNT = 0
 $Global:IS_WAR_EXIST = $false
@@ -22,7 +24,7 @@ function Get-FileFromURL {
     process {
         try {
             $request = [System.Net.HttpWebRequest]::Create($URL)
-            $request.set_Timeout(5000) # 5 second timeout
+            $request.set_Timeout(30000) # 5 second timeout
             $response = $request.GetResponse()
             $total_bytes = $response.ContentLength
             $response_stream = $response.GetResponseStream()
@@ -107,7 +109,7 @@ function Check-JenkinsSetupFolderExists {
 function Get-LatestPluginLink {
     [CmdletBinding()]
     param(
-        [Parameter(Mandatory, Position = 1)]
+        [Parameter(Mandatory, Position = 0)]
         [string]$PluginName
     )
     (Invoke-WebRequest -UseBasicParsing $Global:JENKINS_PLUGINS_URL$PluginName).Content | % { [regex]::matches($_, "(?:<a href=')(.*)(?:' .*' '>)").Groups[3].Value }
@@ -150,7 +152,7 @@ function ProgressFor-Plugins {
 function Setup-Java() {
     [CmdletBinding()]
     param(
-        [Parameter(Mandatory, Position = 1)]
+        [Parameter(Mandatory, Position = 0)]
         [string]$filePath
     )
     if ((Test-Path -Path "$filePathjre8.exe") -eq "False") {
@@ -188,6 +190,16 @@ function Check-FileHashes {
     }
 }
 
+function Download-JenkinsCli {
+    $JenkinsCliJarUrl = "http://localhost:8080/jnlpJars/jenkins-cli.jar"
+    $JenkinsCliDownloadPath = $Global:FOLDER_LOCATION + "jenkins-cli.jar"
+    Get-FileFromURL -URL $JenkinsCliJarUrl -Filename $JenkinsCliDownloadPath
+}
+
+function Copy-Configurations {
+    Copy-Item 
+}
+
 function Start-Jenkins {
     
     $title = 'Jenkins islemi'
@@ -196,16 +208,19 @@ function Start-Jenkins {
 
     $decision = $Host.UI.PromptForChoice($title, $question, $choices, 1)
     if ($decision -eq 0) {
-
-        $jenkinsApp = Start-Process -FilePath javaw -ArgumentList '-jar', 'jenkins.war' -RedirectStandardOutput '.\console.out' -RedirectStandardError '.\console.err'
+        $jenkinsApp = Start-Process -FilePath javaw -ArgumentList '-jar', 'jenkins.war' -RedirectStandardOutput '.\console.out' -RedirectStandardError '.\console.err' -PassThru
+        $jenkinsApp
     }
     else {
         Write-Host 'Islem iptal edildi.'
-    }
+    }        
+}
+
+function Wait-JenkinsStart {
+    while ($true) { Start-Sleep -Second 1; Get-Content ($env:USERPROFILE + "\Desktop\jenkins\console.err") -Tail 100 | Select-String "Jenkins is fully up and running" | % { write-host Found $_; break } }
 }
 
 $isFolderExist = Check-JenkinsSetupFolderExists
-
 if (!$isFolderExist) {
     New-Item -ItemType Directory -Path $Global:FOLDER_LOCATION -Force | Out-Null
 }
@@ -241,5 +256,13 @@ if (((Get-Command java | Select-Object -ExpandProperty Version).tostring() -notm
     }
 }
 else {
-    Start-Jenkins
+    $GLOBAL:jenkinsApp = Start-Jenkins
+
+    if ($null -ne $GLOBAL:jenkinsApp.Id) {
+        Wait-JenkinsStart
+        Download-JenkinsCli
+    }
+    else {
+        Write-Host 'Jenkins baslatilamadi.' -ForegroundColor Red
+    }
 }
